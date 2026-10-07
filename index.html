@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Markdown to PDF Converter</title>
+  <link rel="stylesheet" href="style.css">
+  
+  <!-- KaTeX CSS for math rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css" 
+        integrity="sha384-ZhQd8xZqJ9ZgZpJ9ZgZpJ9ZgZpJ9ZgZpJ9ZgZpJ9ZgZpJ9ZgZpJ9ZgZpJ9ZgZp" 
+        crossorigin="anonymous">
+  
+  <!-- Mermaid CSS (optional, for theme) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📄 Markdown → PDF Converter</h1>
+      <p class="subtitle">Client-side only • Privacy-first • No server needed</p>
+    </header>
+
+    <main>
+      <!-- Upload Zone -->
+      <section class="upload-section" id="uploadSection">
+        <input type="file" id="fileInput" accept=".md,.markdown,.txt" hidden>
+        <div class="drop-zone" id="dropZone">
+          <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <p class="drop-text">마크다운 파일(<code>.md</code>, <code>.markdown</code>)을 <strong>드래그 앤 드롭</strong>하거나 클릭하여 업로드하세요</p>
+          <p class="drop-hint">또는 <button type="button" id="browseBtn" class="btn-link">파일 선택</button></p>
+        </div>
+      </section>
+
+      <!-- Preview Section (hidden initially) -->
+      <section class="preview-section hidden" id="previewSection">
+        <div class="preview-header">
+          <h2>미리보기</h2>
+          <div class="preview-actions">
+            <label class="checkbox-wrapper">
+              <input type="checkbox" id="showRaw" checked>
+              <span>원본 보기</span>
+            </label>
+            <button type="button" id="downloadPdf" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              PDF 다운로드
+            </button>
+          </div>
+        </div>
+        <div class="preview-container">
+          <div class="editor-pane" id="editorPane">
+            <label for="markdownInput">마크다운 소스</label>
+            <textarea id="markdownInput" spellcheck="false" placeholder="마크다운 내용을 여기에 붙여넣으세요..."></textarea>
+          </div>
+          <div class="preview-pane" id="previewPane">
+            <label>렌더링 결과</label>
+            <div id="renderedContent" class="markdown-body"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Loading State -->
+      <div class="loading hidden" id="loading">
+        <div class="spinner"></div>
+        <p>PDF 생성 중...</p>
+      </div>
+
+      <!-- Error Toast -->
+      <div class="toast hidden" id="toast"></div>
+    </main>
+
+    <footer>
+      <p>Powered by <a href="https://marked.js.org/" target="_blank">marked</a>, 
+         <a href="https://katex.org/" target="_blank">KaTeX</a>, 
+         <a href="https://mermaid.js.org/" target="_blank">Mermaid</a>, 
+         <a href="https://github.com/eKoopmans/html2pdf.js" target="_blank">html2pdf.js</a></p>
+    </footer>
+  </div>
+
+  <!-- Libraries via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.0/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.0/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/contrib/auto-render.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+  
+  <script src="app.js"></script>
+</body>
+</html>
