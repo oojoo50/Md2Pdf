@@ -635,78 +635,402 @@
   }
 
   // ========================================
-  // Ambient background particles
+  // Ambient background
+  // A looping scene that demonstrates the product: Markdown glyphs stream in
+  // from the left, converge on the document, and resolve into a typeset A4
+  // sheet on the right. Layers parallax against the pointer.
   // ========================================
-  function setupParticles() {
+  const bg = {
+    canvas: null,
+    ctx: null,
+    width: 0,
+    height: 0,
+    pointerX: 0,
+    pointerY: 0,
+    targetX: 0,
+    targetY: 0,
+    pointerInside: false,
+    motes: [],
+    glyphs: [],
+page: null,
+  compositionEnabled: true,
+  frame: 0,
+    startedAt: 0,
+    reducedMotion: false
+  };
+
+  const GLYPH_POOL = [
+    '#', '##', '**', '*', '$', '$$', '`', '```', '- [ ]', '[a](b)',
+    '|', '>|', '---', '1.', '>', '=>', '~~~', '[^1]', 'x^2'
+  ];
+
+  const MONO = '"SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace';
+  const CYCLE_MS = 15000;
+  const COMPOSITION_MIN_WIDTH = 720;
+
+  // roundRect is Chrome 99+/Safari 16+; the project supports Safari 14
+  function roundedRect(ctx, x, y, width, height, radius) {
+    const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') {
+      ctx.roundRect(x, y, width, height, r);
+      return;
+    }
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + width, y, x + width, y + height, r);
+    ctx.arcTo(x + width, y + height, x, y + height, r);
+    ctx.arcTo(x, y + height, x, y, r);
+    ctx.arcTo(x, y, x + width, y, r);
+    ctx.closePath();
+  }
+
+  function pageGeometry() {
+    const sheetWidth = Math.max(148, Math.min(bg.width * 0.17, 232));
+    return {
+      x: bg.width - sheetWidth - Math.max(28, bg.width * 0.045),
+      y: Math.max(24, bg.height * 0.12),
+      width: sheetWidth,
+      height: sheetWidth * 1.414
+    };
+  }
+
+  function buildMotes() {
+    const density = Math.min(70, Math.round((bg.width * bg.height) / 20000));
+    bg.motes = Array.from({ length: density }, () => ({
+      x: Math.random() * bg.width,
+      y: Math.random() * bg.height,
+      radius: Math.random() * 1.4 + 0.4,
+      rise: Math.random() * 0.18 + 0.05,
+      sway: (Math.random() - 0.5) * 0.14,
+      alpha: Math.random() * 0.3 + 0.07
+    }));
+  }
+
+  function buildGlyphs() {
+    // The glyph stream and the sheet are one idea; below this width there is
+    // no room to read either, so mobile keeps only the motes.
+    bg.compositionEnabled = bg.width >= COMPOSITION_MIN_WIDTH;
+    const count = bg.compositionEnabled
+      ? Math.round(Math.min(20, bg.width / 90))
+      : 0;
+    bg.glyphs = Array.from({ length: count }, (_, index) => ({
+      text: GLYPH_POOL[index % GLYPH_POOL.length],
+      // Stagger the start so the stream does not pulse in lockstep
+      offset: Math.random(),
+      lane: Math.random(),
+      size: Math.random() * 5 + 11,
+      sway: Math.random() * 6 + 3,
+      drift: Math.random() * 0.06 + 0.03
+    }));
+  }
+
+  function resizeBackground() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    bg.width = window.innerWidth;
+    bg.height = window.innerHeight;
+    bg.canvas.width = Math.floor(bg.width * dpr);
+    bg.canvas.height = Math.floor(bg.height * dpr);
+    bg.canvas.style.width = `${bg.width}px`;
+    bg.canvas.style.height = `${bg.height}px`;
+    bg.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildMotes();
+    buildGlyphs();
+  }
+
+  function drawMotes() {
+    const ctx = bg.ctx;
+    bg.motes.forEach((mote) => {
+      mote.y -= mote.rise;
+      mote.x += mote.sway;
+      if (mote.y < -6) {
+        mote.y = bg.height + 6;
+        mote.x = Math.random() * bg.width;
+      }
+      if (mote.x < -6) mote.x = bg.width + 6;
+      if (mote.x > bg.width + 6) mote.x = -6;
+
+      const driftX = bg.pointerX * 5;
+      const driftY = bg.pointerY * 5;
+      ctx.beginPath();
+      ctx.arc(mote.x + driftX, mote.y + driftY, mote.radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(168, 135, 78, ${mote.alpha})`;
+      ctx.fill();
+    });
+  }
+
+  function drawGlyphStream(cycle) {
+    if (!bg.glyphs.length) return;
+    const ctx = bg.ctx;
+    const page = bg.page;
+    const depthX = bg.pointerX * 15;
+    const depthY = bg.pointerY * 15;
+
+    ctx.textBaseline = 'middle';
+
+    bg.glyphs.forEach((glyph) => {
+      // 0 -> 1 over the first 78% of the cycle, then hand off to the sheet
+      const travel = (cycle + glyph.offset) / 1.28;
+      if (travel > 1) return;
+
+      const eased = travel * travel * (3 - 2 * travel);
+      const startX = -40;
+      const endX = page.x + page.width * (0.2 + glyph.lane * 0.6);
+      const startY = bg.height * (0.18 + glyph.lane * 0.66);
+      const endY = page.y + page.height * (0.12 + (1 - glyph.lane) * 0.78);
+
+      const x = startX + (endX - startX) * eased;
+      const baseY = startY + (endY - startY) * eased;
+      const y = baseY + Math.sin(travel * 9 + glyph.offset * 12) * glyph.sway;
+      const alpha = Math.sin(Math.min(1, travel) * Math.PI) * 0.5;
+
+      ctx.save();
+      ctx.translate(x + depthX, y + depthY);
+      ctx.rotate(travel * 0.22 * (glyph.lane - 0.5) + bg.pointerX * 0.05);
+      ctx.font = `${glyph.size}px ${MONO}`;
+      ctx.fillStyle = `rgba(125, 95, 40, ${alpha.toFixed(3)})`;
+      ctx.fillText(glyph.text, 0, 0);
+      ctx.restore();
+    });
+  }
+
+  function drawSheet(cycle) {
+    if (!bg.compositionEnabled) return;
+    const ctx = bg.ctx;
+    const page = bg.page;
+    const depthX = -bg.pointerX * 26;
+    const depthY = -bg.pointerY * 18;
+
+    // Content fills in as the glyphs arrive: 0.42 -> 0.96 of the cycle
+    const build = Math.max(0, Math.min(1, (cycle - 0.42) / 0.54));
+    const fade = cycle < 0.88 ? 1 : Math.max(0, (1 - cycle) / 0.12);
+    if (fade <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.translate(page.x + depthX, page.y + depthY);
+    ctx.transform(1, 0, bg.pointerX * -0.02, 1, 0, 0);
+
+    // Paper
+    ctx.shadowColor = 'rgba(35, 28, 15, 0.16)';
+    ctx.shadowBlur = 34;
+    ctx.shadowOffsetY = 12;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+    roundedRect(ctx, 0, 0, page.width, page.height, 8);
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = 'rgba(35, 30, 18, 0.14)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Folded corner — the "this became a document" cue
+    ctx.beginPath();
+    ctx.moveTo(page.width - 26, 0);
+    ctx.lineTo(page.width, 26);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(243, 239, 230, 0.95)';
+    ctx.fill();
+
+    const pad = page.width * 0.13;
+    const inner = page.width - pad * 2;
+    let cursor = pad;
+
+    const bar = (y, w, h, color) => {
+      if (build < 0.05) return;
+      ctx.fillStyle = color;
+      roundedRect(ctx, pad, y, Math.max(2, inner * w * build), h, h / 2);
+      ctx.fill();
+    };
+
+    // Title, then a gold rule beneath it
+    bar(cursor, 0.72, page.width * 0.055, 'rgba(23, 21, 15, 0.82)');
+    cursor += page.width * 0.1;
+    bar(cursor, 1, 1, 'rgba(168, 135, 78, 0.9)');
+    cursor += page.width * 0.075;
+
+    // Body copy
+    const lines = [1, 0.94, 0.98, 0.7, 0.96, 0.62];
+    const lineHeight = page.height * 0.031;
+    lines.forEach((lineWidth, index) => {
+      if (index / lines.length > build) return;
+      bar(cursor, lineWidth, 3.4, 'rgba(35, 30, 18, 0.2)');
+      cursor += lineHeight;
+    });
+
+    // Bar chart: the KaTeX / data payload
+    if (build > 0.5) {
+      const chartBase = cursor + page.height * 0.03;
+      const chartHeight = page.height * 0.085;
+      const bars = [0.45, 0.78, 0.6, 0.95, 0.7];
+      const barWidth = inner / (bars.length * 1.7);
+      const gap = (inner - barWidth * bars.length) / (bars.length - 1);
+      const grow = Math.min(1, (build - 0.5) / 0.32);
+
+      bars.forEach((value, index) => {
+        const height = chartHeight * value * grow;
+        const x = pad + index * (barWidth + gap);
+        ctx.fillStyle =
+          index === 3 ? 'rgba(168, 135, 78, 0.85)' : 'rgba(35, 30, 18, 0.16)';
+        roundedRect(ctx, x, chartBase + chartHeight - height, barWidth, height, 2);
+        ctx.fill();
+      });
+      cursor = chartBase + chartHeight;
+    }
+
+    // Node graph: the Mermaid diagram, drawing itself
+    if (build > 0.68) {
+      const draw = Math.min(1, (build - 0.68) / 0.3);
+      const originX = pad;
+      const originY = cursor + page.height * 0.075;
+      const nodes = [
+        { x: 0, y: 0 },
+        { x: inner * 0.45, y: -page.height * 0.035 },
+        { x: inner * 0.92, y: page.height * 0.012 }
+      ];
+
+      ctx.strokeStyle = 'rgba(168, 135, 78, 0.55)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(originX + nodes[0].x + 4, originY + nodes[0].y);
+      for (let i = 1; i < nodes.length; i += 1) {
+        const previous = nodes[i - 1];
+        const target = nodes[i];
+        const midX = originX + (previous.x + target.x) / 2;
+        ctx.moveTo(originX + previous.x + 4, originY + previous.y);
+        ctx.lineTo(midX, originY + previous.y + (target.y - previous.y) * draw);
+        ctx.lineTo(originX + target.x + 4, originY + target.y * draw);
+      }
+      ctx.stroke();
+
+      nodes.forEach((node, index) => {
+        const size = index === 2 ? 5.5 : 4.5;
+        ctx.beginPath();
+        ctx.arc(
+          originX + node.x + 4,
+          originY + node.y * draw,
+          size,
+          0,
+          Math.PI * 2
+        );
+        ctx.fillStyle =
+          index === 2 ? 'rgba(168, 135, 78, 0.95)' : 'rgba(35, 30, 18, 0.3)';
+        ctx.fill();
+      });
+    }
+
+    ctx.restore();
+  }
+
+  function drawCursorGlow() {
+    if (!bg.pointerInside) return;
+    const ctx = bg.ctx;
+    const radius = Math.max(140, Math.min(bg.width, bg.height) * 0.28);
+    const glow = ctx.createRadialGradient(
+      bg.pointerX * 22 + bg.width / 2,
+      bg.pointerY * 18 + bg.height / 2,
+      0,
+      bg.pointerX * 22 + bg.width / 2,
+      bg.pointerY * 18 + bg.height / 2,
+      radius
+    );
+    glow.addColorStop(0, 'rgba(200, 169, 106, 0.1)');
+    glow.addColorStop(1, 'rgba(200, 169, 106, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, bg.width, bg.height);
+  }
+
+  function softenCentre() {
+    const ctx = bg.ctx;
+    const centreX = bg.width / 2;
+    const centreY = bg.height * 0.44;
+    const radius = Math.min(bg.width, bg.height) * 0.52;
+    const mask = ctx.createRadialGradient(centreX, centreY, 0, centreX, centreY, radius);
+    mask.addColorStop(0, 'rgba(0, 0, 0, 0.62)');
+    mask.addColorStop(0.58, 'rgba(0, 0, 0, 0.34)');
+    mask.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = mask;
+    ctx.fillRect(0, 0, bg.width, bg.height);
+    ctx.restore();
+  }
+
+  function renderBackground() {
+    const ctx = bg.ctx;
+    ctx.clearRect(0, 0, bg.width, bg.height);
+
+    const cycle = bg.reducedMotion
+      ? 0.72
+      : ((performance.now() - bg.startedAt) % CYCLE_MS) / CYCLE_MS;
+
+    drawMotes();
+    if (!bg.reducedMotion || cycle > 0) {
+      drawCursorGlow();
+      drawGlyphStream(cycle);
+      drawSheet(cycle);
+      softenCentre();
+    }
+  }
+
+  function setupBackground() {
     const canvas = document.getElementById('bgCanvas');
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let width = 0;
-    let height = 0;
-    let motes = [];
+    bg.canvas = canvas;
+    bg.ctx = ctx;
+    bg.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    bg.startedAt = performance.now();
+    bg.page = pageGeometry();
 
-    const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      width = window.innerWidth;
-      height = window.innerHeight;
-      canvas.width = Math.floor(width * dpr);
-      canvas.height = Math.floor(height * dpr);
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    resizeBackground();
+    renderBackground();
 
-      const density = Math.min(64, Math.round((width * height) / 22000));
-      motes = Array.from({ length: density }, () => ({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        r: Math.random() * 1.3 + 0.4,
-        speed: Math.random() * 0.16 + 0.04,
-        drift: (Math.random() - 0.5) * 0.12,
-        alpha: Math.random() * 0.35 + 0.08
-      }));
+    if (bg.reducedMotion) return;
+
+    const advancePointer = () => {
+      bg.pointerX += (bg.targetX - bg.pointerX) * 0.06;
+      bg.pointerY += (bg.targetY - bg.pointerY) * 0.06;
     };
 
-    const draw = () => {
-      ctx.clearRect(0, 0, width, height);
-      motes.forEach((mote) => {
-        mote.y -= mote.speed;
-        mote.x += mote.drift;
-        if (mote.y < -4) {
-          mote.y = height + 4;
-          mote.x = Math.random() * width;
-        }
-        ctx.beginPath();
-        ctx.arc(mote.x, mote.y, mote.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(232, 213, 168, ${mote.alpha})`;
-        ctx.fill();
-      });
-    };
-
-    resize();
-    draw();
-
-    if (reduced) return;
-
-    let frame = 0;
     const loop = () => {
-      draw();
-      frame = window.requestAnimationFrame(loop);
+      advancePointer();
+      bg.page = pageGeometry();
+      // The scene belongs to the landing page; idle elsewhere
+      if (!els.landingView || !els.landingView.classList.contains('hidden')) {
+        renderBackground();
+      }
+      bg.frame = window.requestAnimationFrame(loop);
     };
-    frame = window.requestAnimationFrame(loop);
+    bg.frame = window.requestAnimationFrame(loop);
+
+    window.addEventListener('pointermove', (event) => {
+      bg.pointerInside = true;
+      bg.targetX = (event.clientX / window.innerWidth) * 2 - 1;
+      bg.targetY = (event.clientY / window.innerHeight) * 2 - 1;
+    }, { passive: true });
+
+    window.addEventListener('pointerleave', () => {
+      bg.pointerInside = false;
+      bg.targetX = 0;
+      bg.targetY = 0;
+    });
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
-        window.cancelAnimationFrame(frame);
+        window.cancelAnimationFrame(bg.frame);
       } else {
-        frame = window.requestAnimationFrame(loop);
+        bg.startedAt = performance.now();
+        bg.frame = window.requestAnimationFrame(loop);
       }
     });
 
-    window.addEventListener('resize', debounce(resize, 200));
+    window.addEventListener('resize', debounce(() => {
+      resizeBackground();
+      bg.page = pageGeometry();
+    }, 200));
   }
 
   // ========================================
@@ -775,7 +1099,7 @@
     setupEditor();
     setupResizer();
     setupLayoutToggle();
-    setupParticles();
+    setupBackground();
     setupShortcuts();
 
     els.homeBtn?.addEventListener('click', goHome);
