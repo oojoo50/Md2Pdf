@@ -211,42 +211,36 @@ async function generatePDF() {
   setDownloadButtonState(false);
   
   try {
-    const element = elements.renderedContent.cloneNode(true);
+    // Use the already-rendered preview pane directly (visible in DOM)
+    const sourceElement = elements.renderedContent;
     
     // Ensure mermaid SVGs are properly sized for PDF
-    element.querySelectorAll('.mermaid svg').forEach(svg => {
+    sourceElement.querySelectorAll('.mermaid svg').forEach(svg => {
       svg.style.maxWidth = '100%';
       svg.style.height = 'auto';
     });
     
     // Ensure images load before PDF generation
-    const images = element.querySelectorAll('img');
+    const images = sourceElement.querySelectorAll('img');
     await Promise.all(Array.from(images).map(img => {
       if (img.complete) return Promise.resolve();
       return new Promise(resolve => {
         img.onload = resolve;
         img.onerror = resolve;
-        // Timeout after 5 seconds
         setTimeout(resolve, 5000);
       });
     }));
     
-    // Generate PDF using html2pdf
+    // Generate PDF using html2pdf from the visible preview pane
     const opt = {
       ...CONFIG.pdf,
       filename,
       jsPDF: { ...CONFIG.pdf.jsPDF }
     };
     
-    // Temporarily show element for html2pdf to capture
-    const tempContainer = document.createElement('div');
-    tempContainer.style.cssText = 'position: absolute; left: -9999px; top: 0; width: 800px; background: white; padding: 40px;';
-    tempContainer.appendChild(element);
-    document.body.appendChild(tempContainer);
+    // Capture directly from the rendered preview (already in DOM, visible)
+    await html2pdf().set(opt).from(sourceElement).save();
     
-    await html2pdf().set(opt).from(tempContainer).save();
-    
-    document.body.removeChild(tempContainer);
     showToast('PDF 다운로드 완료!', 'success');
   } catch (err) {
     console.error('PDF generation error:', err);
