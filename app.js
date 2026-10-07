@@ -604,6 +604,12 @@
 
       setProgress(52);
 
+      // The display face is a webfont; capturing before it loads would bake
+      // fallback glyphs into the PDF.
+      if (document.fonts?.ready) {
+        await document.fonts.ready;
+      }
+
       await html2pdf()
         .set({
           ...CONFIG.pdf,
