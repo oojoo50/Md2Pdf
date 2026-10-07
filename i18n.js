@@ -282,6 +282,14 @@ const I18N = {
       'zh-CN': ' — '
     },
 
+    heroEyebrow: {
+      en: 'Convert · Render · Export',
+      ko: '변환 · 렌더 · 내보내기',
+      hi: 'बदलें · रेंडर · निर्यात',
+      ja: '変換 · レンダリング · 書き出し',
+      'zh-CN': '转换 · 渲染 · 导出'
+    },
+
     landingTitle: {
       en: 'Markdown to',
       ko: '마크다운을',
